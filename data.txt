@@ -1,3 +1,7 @@
-email:dummy.email@domain.in
+email:john@example.com
 name:John Doe
 mob:+91-9876543210
+random1:random thing is just soo random12#@Q423FDKQAN
+command:git log --oneline --graph
+password:super_secret_123
+git-command:git log --oneline --decorate
