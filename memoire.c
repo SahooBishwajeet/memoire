@@ -35,7 +35,7 @@ static void usage(const char *prog) {
     fprintf(stderr,
             "Usage:\n"
             "  %s [options]            # list all entries\n"
-            "  %s [options] get <key>  # get a key\n"
+            "  %s [options] get <key>  # get a key (fuzzy search allowed)\n"
             "  %s [options] set <key> <value>  # set (create or overwrite)\n"
             "  %s [options] update <key> <value>  # update existing key only\n"
             "  %s [options] delete <key>  # delete a key\n"
@@ -211,10 +211,54 @@ static int saveEntriesAtomic(const char *path, Entry *arr, size_t n) {
     return 0;
 }
 
+static int fuzzyMatch(const char *key, const char *pattern) {
+    if (!key || !pattern) return 0;
+
+    const char *k = key;
+    const char *p = pattern;
+
+    // Convert to lowercase for case-insensitive matching
+    while (*p) {
+        char pc = tolower(*p);
+        int found = 0;
+
+        // Look for this pattern character in the remaining key
+        while (*k) {
+            if (tolower(*k) == pc) {
+                found = 1;
+                k++;
+                break;
+            }
+            k++;
+        }
+
+        if (!found) return 0;  // Pattern character not found
+        p++;
+    }
+
+    return 1;  // All pattern characters found in order
+}
+
 static ssize_t findEntry(Entry *arr, size_t n, const char *key) {
     if (!key) return -1;
     for (size_t i = 0; i < n; ++i) {
         if (arr[i].key && strcmp(arr[i].key, key) == 0) return (ssize_t)i;
+    }
+    return -1;
+}
+
+static ssize_t findEntryFuzzy(Entry *arr, size_t n, const char *pattern) {
+    if (!pattern) return -1;
+
+    // First try exact match
+    ssize_t exact = findEntry(arr, n, pattern);
+    if (exact >= 0) return exact;
+
+    // Then try fuzzy match
+    for (size_t i = 0; i < n; ++i) {
+        if (arr[i].key && fuzzyMatch(arr[i].key, pattern)) {
+            return (ssize_t)i;
+        }
     }
     return -1;
 }
@@ -306,7 +350,7 @@ int main(int argc, char const *argv[]) {
             return 1;
         }
 
-        ssize_t pos = findEntry(arr, n, key);
+        ssize_t pos = findEntryFuzzy(arr, n, key);
         if (pos >= 0) {
             printf("%s: %s\n", arr[pos].key, arr[pos].value ? arr[pos].value : "");
             freeEntries(arr, n);
