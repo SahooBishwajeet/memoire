@@ -22,26 +22,60 @@ static char *trim(char *s) {
     return s;
 }
 
+static void usage(const char *prog) {
+    fprintf(stderr,
+            "Usage:\n"
+            "  %s [options]            # list entries (default)\n"
+            "  %s [options] <key>      # get a key\n"
+            "Options:\n"
+            "  -f, --file <path>       Use data file (default ./data.txt)\n"
+            "  -y, --yes               Assume yes for confirmations (future use)\n"
+            "  -h, --help              Show this help\n",
+            prog, prog);
+}
+
 int main(int argc, char const *argv[]) {
-    if (argc > 2) {
-        fprintf(stderr, "Usage: %s [key]\n", argv[0]);
-        return 2;
-    }
-    int listMode = (argc == 1);
-    char *search = NULL;
+    const char *prog = argc > 0 ? argv[0] : "memoire";
 
     const char *filePath = "./data.txt";
-    FILE *fp = fopen(filePath, "r");
-    if (!fp) {
-        fprintf(stderr, "Error opening '%s' : '%s'\n", filePath, strerror(errno));
-        return 1;
+    int assumeYes = 0;
+
+    int idx = 1;
+    while (idx < argc && argv[idx] && argv[idx][0] == '-') {
+        if (strcmp(argv[idx], "-f") == 0 || strcmp(argv[idx], "--file") == 0) {
+            if (idx + 1 >= argc) {
+                fprintf(stderr, "Missing argument (filename) for %s\n", argv[idx]);
+                usage(prog);
+                return 2;
+            }
+
+            filePath = argv[idx + 1];
+            idx += 2;
+        } else if (strcmp(argv[idx], "-y") == 0 || strcmp(argv[idx], "--yes") == 0) {
+            assumeYes = 1;
+            idx++;
+        } else if (strcmp(argv[idx], "-h") == 0 || strcmp(argv[idx], "--help") == 0) {
+            usage(prog);
+            return 0;
+        } else {
+            fprintf(stderr, "Unknown options: %s\n", argv[idx]);
+            usage(prog);
+            return 2;
+        }
     }
 
+    if ((argc - idx) > 1) {
+        fprintf(stderr, "Too Many arguments\n");
+        usage(prog);
+        return 2;
+    }
+    int listMode = ((argc - idx) == 0);
+    char *search = NULL;
+
     if (!listMode) {
-        search = strdup(argv[1]);
+        search = strdup(argv[idx]);
         if (!search) {
             fprintf(stderr, "Memory Error\n");
-            fclose(fp);
             return 1;
         }
 
@@ -50,6 +84,14 @@ int main(int argc, char const *argv[]) {
             memmove(search, temp, strlen(temp) + 1);
         }
     }
+
+    FILE *fp = fopen(filePath, "r");
+    if (!fp) {
+        fprintf(stderr, "Error opening '%s' : '%s'\n", filePath, strerror(errno));
+        free(search);
+        return 1;
+    }
+
     int found = 0;
 
     char *line = NULL;    // buffer to store 1 input line
@@ -95,6 +137,7 @@ int main(int argc, char const *argv[]) {
 
     free(search);
     (void)found;
+    (void)assumeYes;
 
     return 0;
 }
