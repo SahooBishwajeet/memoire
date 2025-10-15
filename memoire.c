@@ -34,14 +34,16 @@ static char *trim(char *s) {
 static void usage(const char *prog) {
     fprintf(stderr,
             "Usage:\n"
-            "  %s [options]            # list entries (default)\n"
-            "  %s [options] <key>      # get a key\n"
+            "  %s [options]            # list all entries\n"
+            "  %s [options] get <key>  # get a key\n"
             "  %s [options] set <key> <value>  # set (create or overwrite)\n"
+            "  %s [options] update <key> <value>  # update existing key only\n"
+            "  %s [options] delete <key>  # delete a key\n"
             "Options:\n"
             "  -f, --file <path>       Use data file (default ./data.txt)\n"
             "  -y, --yes               Assume yes for confirmations\n"
             "  -h, --help              Show this help\n",
-            prog, prog, prog);
+            prog, prog, prog, prog, prog);
 }
 
 static int confirmPrompt(const char *prompt) {
@@ -217,6 +219,28 @@ static ssize_t findEntry(Entry *arr, size_t n, const char *key) {
     return -1;
 }
 
+static Entry *removeEntry(Entry *arr, size_t *n, size_t index) {
+    if (!arr || index >= *n) return arr;
+
+    free(arr[index].key);
+    free(arr[index].value);
+
+    // Shift remaining entries
+    for (size_t i = index; i < *n - 1; ++i) {
+        arr[i] = arr[i + 1];
+    }
+
+    (*n)--;
+
+    if (*n == 0) {
+        free(arr);
+        return NULL;
+    }
+
+    Entry *tmp = realloc(arr, (*n) * sizeof(Entry));
+    return tmp ? tmp : arr;  // Return original if realloc fails but keep smaller size
+}
+
 int main(int argc, char const *argv[]) {
     const char *prog = argc > 0 ? argv[0] : "memoire";
 
@@ -247,7 +271,7 @@ int main(int argc, char const *argv[]) {
         }
     }
 
-    // decide whether this is list/get or subcommand
+    // decide whether this is list mode or a subcommand
     if (idx >= argc) {
         // list mode: use loadEntries()
         Entry *arr = NULL;
@@ -263,12 +287,45 @@ int main(int argc, char const *argv[]) {
         return 0;
     }
 
-    // If first positional arg is "set", handle set <key> <value>
-    if (strcmp(argv[idx], "set") == 0) {
-        if (idx + 2 >= argc) {
+    const char *command = argv[idx];
+
+    // Handle get command
+    if (strcmp(command, "get") == 0) {
+        if (idx + 1 >= argc) {
+            fprintf(stderr, "Missing key for get command\n");
             usage(prog);
             return 2;
-        }  // need two args
+        }
+
+        const char *key = argv[idx + 1];
+        Entry *arr = NULL;
+        size_t n = 0;
+
+        if (loadEntries(filePath, &arr, &n, 0) != 0) {
+            freeEntries(arr, n);
+            return 1;
+        }
+
+        ssize_t pos = findEntry(arr, n, key);
+        if (pos >= 0) {
+            printf("%s: %s\n", arr[pos].key, arr[pos].value ? arr[pos].value : "");
+            freeEntries(arr, n);
+            return 0;
+        } else {
+            fprintf(stderr, "Key '%s' not found\n", key);
+            freeEntries(arr, n);
+            return 1;
+        }
+    }
+
+    // Handle set command
+    if (strcmp(command, "set") == 0) {
+        if (idx + 2 >= argc) {
+            fprintf(stderr, "Missing key and/or value for set command\n");
+            usage(prog);
+            return 2;
+        }
+
         const char *key = argv[idx + 1];
 
         size_t valLen = 1;  // for '\0'
@@ -287,6 +344,7 @@ int main(int argc, char const *argv[]) {
         Entry *arr = NULL;
         size_t n = 0;
         if (loadEntries(filePath, &arr, &n, 0) != 0) {
+            free(value);
             freeEntries(arr, n);
             return 1;
         }
@@ -301,6 +359,7 @@ int main(int argc, char const *argv[]) {
                          arr[pos].value ? arr[pos].value : "", value ? value : "");
                 if (!confirmPrompt(prompt)) {
                     fprintf(stderr, "Aborted.\n");
+                    free(value);
                     freeEntries(arr, n);
                     return 1;
                 }
@@ -309,6 +368,7 @@ int main(int argc, char const *argv[]) {
             arr[pos].value = strdup(value ? value : "");
             if (!arr[pos].value) {
                 fprintf(stderr, "Memory error\n");
+                free(value);
                 freeEntries(arr, n);
                 return 1;
             }
@@ -317,6 +377,7 @@ int main(int argc, char const *argv[]) {
             Entry *tmp = realloc(arr, (n + 1) * sizeof(Entry));
             if (!tmp) {
                 fprintf(stderr, "Memory error\n");
+                free(value);
                 freeEntries(arr, n);
                 return 1;
             }
@@ -325,6 +386,7 @@ int main(int argc, char const *argv[]) {
             arr[n].value = strdup(value ? value : "");
             if (!arr[n].key || !arr[n].value) {
                 fprintf(stderr, "Memory error\n");
+                free(value);
                 freeEntries(arr, n + 1);
                 return 1;
             }
@@ -333,71 +395,141 @@ int main(int argc, char const *argv[]) {
 
         if (saveEntriesAtomic(filePath, arr, n) != 0) {
             fprintf(stderr, "Failed to save changes\n");
+            free(value);
             freeEntries(arr, n);
             return 1;
         }
 
-        freeEntries(arr, n);
         free(value);
+        freeEntries(arr, n);
         printf("OK\n");
         return 0;
     }
 
-    if ((argc - idx) > 1) {
-        fprintf(stderr, "Too Many arguments\n");
-        usage(prog);
-        return 2;
-    }
-    int listMode = ((argc - idx) == 0);
-    char *search = NULL;
+    // Handle update command
+    if (strcmp(command, "update") == 0) {
+        if (idx + 2 >= argc) {
+            fprintf(stderr, "Missing key and/or value for update command\n");
+            usage(prog);
+            return 2;
+        }
 
-    if (!listMode) {
-        search = strdup(argv[idx]);
-        if (!search) {
-            fprintf(stderr, "Memory Error\n");
+        const char *key = argv[idx + 1];
+
+        size_t valLen = 1;  // for '\0'
+        for (int i = idx + 2; i < argc; ++i) valLen += strlen(argv[i]) + 1;
+        char *value = malloc(valLen);
+        if (!value) {
+            fprintf(stderr, "Memory error\n");
             return 1;
         }
-
-        char *temp = trim(search);
-        if (temp != search) {
-            memmove(search, temp, strlen(temp) + 1);
+        value[0] = '\0';
+        for (int i = idx + 2; i < argc; ++i) {
+            strcat(value, argv[i]);
+            if (i + 1 < argc) strcat(value, " ");
         }
-    }
 
-    if (listMode) {
         Entry *arr = NULL;
         size_t n = 0;
         if (loadEntries(filePath, &arr, &n, 0) != 0) {
+            free(value);
             freeEntries(arr, n);
-            free(search);
             return 1;
         }
-        for (size_t i = 0; i < n; ++i) {
-            printf("%s: %s\n", arr[i].key ? arr[i].key : "", arr[i].value ? arr[i].value : "");
-        }
-        freeEntries(arr, n);
-    } else {
-        Entry *arr = NULL;
-        size_t n = 0;
-        if (loadEntries(filePath, &arr, &n, 1) != 0) {
-            freeEntries(arr, n);
-            free(search);
-            return 1;
-        }
-        int found = 0;
-        for (size_t i = 0; i < n; ++i) {
-            if (arr[i].key && strcmp(arr[i].key, search) == 0) {
-                printf("%s: %s\n", arr[i].key, arr[i].value ? arr[i].value : "");
-                found = 1;
-                break;
+
+        ssize_t pos = findEntry(arr, n, key);
+        if (pos >= 0) {
+            // exists: confirm update
+            if (!assumeYes) {
+                char prompt[1024];
+                snprintf(prompt, sizeof(prompt),
+                         "Update key '%s'?\nOld value: %s\nNew value: %s\nConfirm update?", key,
+                         arr[pos].value ? arr[pos].value : "", value ? value : "");
+                if (!confirmPrompt(prompt)) {
+                    fprintf(stderr, "Aborted.\n");
+                    free(value);
+                    freeEntries(arr, n);
+                    return 1;
+                }
             }
+            free(arr[pos].value);
+            arr[pos].value = strdup(value ? value : "");
+            if (!arr[pos].value) {
+                fprintf(stderr, "Memory error\n");
+                free(value);
+                freeEntries(arr, n);
+                return 1;
+            }
+
+            if (saveEntriesAtomic(filePath, arr, n) != 0) {
+                fprintf(stderr, "Failed to save changes\n");
+                free(value);
+                freeEntries(arr, n);
+                return 1;
+            }
+
+            free(value);
+            freeEntries(arr, n);
+            printf("OK\n");
+            return 0;
+        } else {
+            fprintf(stderr, "Key '%s' not found. Use 'set' to create new entries.\n", key);
+            free(value);
+            freeEntries(arr, n);
+            return 1;
         }
-        freeEntries(arr, n);
-        (void)found;
     }
 
-    free(search);
-    (void)assumeYes;
+    // Handle delete command
+    if (strcmp(command, "delete") == 0) {
+        if (idx + 1 >= argc) {
+            fprintf(stderr, "Missing key for delete command\n");
+            usage(prog);
+            return 2;
+        }
 
-    return 0;
+        const char *key = argv[idx + 1];
+        Entry *arr = NULL;
+        size_t n = 0;
+
+        if (loadEntries(filePath, &arr, &n, 0) != 0) {
+            freeEntries(arr, n);
+            return 1;
+        }
+
+        ssize_t pos = findEntry(arr, n, key);
+        if (pos >= 0) {
+            if (!assumeYes) {
+                char prompt[1024];
+                snprintf(prompt, sizeof(prompt), "Delete key '%s'?\nValue: %s\nConfirm delete?",
+                         key, arr[pos].value ? arr[pos].value : "");
+                if (!confirmPrompt(prompt)) {
+                    fprintf(stderr, "Aborted.\n");
+                    freeEntries(arr, n);
+                    return 1;
+                }
+            }
+
+            arr = removeEntry(arr, &n, (size_t)pos);
+
+            if (saveEntriesAtomic(filePath, arr, n) != 0) {
+                fprintf(stderr, "Failed to save changes\n");
+                freeEntries(arr, n);
+                return 1;
+            }
+
+            freeEntries(arr, n);
+            printf("OK\n");
+            return 0;
+        } else {
+            fprintf(stderr, "Key '%s' not found\n", key);
+            freeEntries(arr, n);
+            return 1;
+        }
+    }
+
+    // Unknown command
+    fprintf(stderr, "Unknown command: %s\n", command);
+    usage(prog);
+    return 2;
 }
