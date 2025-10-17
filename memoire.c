@@ -11,11 +11,11 @@
 #include <unistd.h>
 
 typedef struct {
-    char *key;
-    char *value;
+    char* key;
+    char* value;
 } Entry;
 
-static char *trim(char *s) {
+static char* trim(char* s) {
     if (!s) return NULL;
 
     // Skip leading whitespace
@@ -24,14 +24,14 @@ static char *trim(char *s) {
     if (*s == '\0') return s;  // string was all whitespace
 
     // Move backward over trailing whitespace
-    char *end = s + strlen(s) - 1;
+    char* end = s + strlen(s) - 1;
     while (end > s && isspace((unsigned char)*end)) end--;
 
     *(end + 1) = '\0';
     return s;
 }
 
-static void usage(const char *prog) {
+static void usage(const char* prog) {
     fprintf(stderr,
             "Usage:\n"
             "  %s [options]            # list all entries\n"
@@ -46,14 +46,14 @@ static void usage(const char *prog) {
             prog, prog, prog, prog, prog);
 }
 
-static int confirmPrompt(const char *prompt) {
+static int confirmPrompt(const char* prompt) {
     char buf[32];
     fprintf(stderr, "%s [y/N]: ", prompt);
     if (!fgets(buf, sizeof(buf), stdin)) return 0;
     return (buf[0] == 'y' || buf[0] == 'Y');
 }
 
-static void freeEntries(Entry *arr, size_t n) {
+static void freeEntries(Entry* arr, size_t n) {
     if (!arr) return;
     for (size_t i = 0; i < n; ++i) {
         free(arr[i].key);
@@ -62,8 +62,8 @@ static void freeEntries(Entry *arr, size_t n) {
     free(arr);
 }
 
-static int loadEntries(const char *path, Entry **out, size_t *numReads, int verbose) {
-    FILE *fp = fopen(path, "r");
+static int loadEntries(const char* path, Entry** out, size_t* numReads, int verbose) {
+    FILE* fp = fopen(path, "r");
     if (!fp) {
         if (errno == ENOENT) {
             *out = NULL;
@@ -74,10 +74,10 @@ static int loadEntries(const char *path, Entry **out, size_t *numReads, int verb
         return -1;
     }
 
-    Entry *arr = NULL;
+    Entry* arr = NULL;
     size_t arrCap = 0, entriesLoaded = 0;
 
-    char *line = NULL;
+    char* line = NULL;
     size_t capacity = 0;
     ssize_t nread;
 
@@ -90,7 +90,7 @@ static int loadEntries(const char *path, Entry **out, size_t *numReads, int verb
         }
 
         // get delimiter ":"
-        char *delim = strchr(line, ':');
+        char* delim = strchr(line, ':');
         if (!delim) {
             if (verbose) {
                 fprintf(stderr, "Skipping line : %s [No Separator ':']\n", line);
@@ -100,8 +100,8 @@ static int loadEntries(const char *path, Entry **out, size_t *numReads, int verb
         *delim = '\0';
 
         // now line contains key; delim + 1 contains value
-        char *key = trim(line);
-        char *value = trim(delim + 1);
+        char* key = trim(line);
+        char* value = trim(delim + 1);
 
         if (key == NULL || key[0] == '\0') {
             if (verbose) {
@@ -112,7 +112,7 @@ static int loadEntries(const char *path, Entry **out, size_t *numReads, int verb
 
         if (entriesLoaded == arrCap) {
             size_t nc = arrCap ? arrCap * 2 : 16;
-            Entry *tmp = realloc(arr, nc * sizeof(Entry));
+            Entry* tmp = realloc(arr, nc * sizeof(Entry));
             if (!tmp) {
                 fprintf(stderr, "Memory allocation failed\n");
                 free(line);
@@ -144,9 +144,9 @@ static int loadEntries(const char *path, Entry **out, size_t *numReads, int verb
     return 0;
 }
 
-static int saveEntriesAtomic(const char *path, Entry *arr, size_t n) {
+static int saveEntriesAtomic(const char* path, Entry* arr, size_t n) {
     size_t tlen = strlen(path) + 12;
-    char *tmp = malloc(tlen + 1);
+    char* tmp = malloc(tlen + 1);
     if (!tmp) {
         fprintf(stderr, "Memory error\n");
         return -1;
@@ -160,7 +160,7 @@ static int saveEntriesAtomic(const char *path, Entry *arr, size_t n) {
         return -1;
     }
 
-    FILE *fp = fdopen(fd, "w");
+    FILE* fp = fdopen(fd, "w");
     if (!fp) {
         fprintf(stderr, "fdopen failed: %s\n", strerror(errno));
         close(fd);
@@ -211,11 +211,11 @@ static int saveEntriesAtomic(const char *path, Entry *arr, size_t n) {
     return 0;
 }
 
-static int fuzzyMatch(const char *key, const char *pattern) {
+static int fuzzyMatch(const char* key, const char* pattern) {
     if (!key || !pattern) return 0;
 
-    const char *k = key;
-    const char *p = pattern;
+    const char* k = key;
+    const char* p = pattern;
 
     // Convert to lowercase for case-insensitive matching
     while (*p) {
@@ -239,7 +239,7 @@ static int fuzzyMatch(const char *key, const char *pattern) {
     return 1;  // All pattern characters found in order
 }
 
-static ssize_t findEntry(Entry *arr, size_t n, const char *key) {
+static ssize_t findEntry(Entry* arr, size_t n, const char* key) {
     if (!key) return -1;
     for (size_t i = 0; i < n; ++i) {
         if (arr[i].key && strcmp(arr[i].key, key) == 0) return (ssize_t)i;
@@ -247,7 +247,7 @@ static ssize_t findEntry(Entry *arr, size_t n, const char *key) {
     return -1;
 }
 
-static ssize_t findEntryFuzzy(Entry *arr, size_t n, const char *pattern) {
+static ssize_t findEntryFuzzy(Entry* arr, size_t n, const char* pattern) {
     if (!pattern) return -1;
 
     // First try exact match
@@ -263,7 +263,7 @@ static ssize_t findEntryFuzzy(Entry *arr, size_t n, const char *pattern) {
     return -1;
 }
 
-static Entry *removeEntry(Entry *arr, size_t *n, size_t index) {
+static Entry* removeEntry(Entry* arr, size_t* n, size_t index) {
     if (!arr || index >= *n) return arr;
 
     free(arr[index].key);
@@ -281,14 +281,14 @@ static Entry *removeEntry(Entry *arr, size_t *n, size_t index) {
         return NULL;
     }
 
-    Entry *tmp = realloc(arr, (*n) * sizeof(Entry));
+    Entry* tmp = realloc(arr, (*n) * sizeof(Entry));
     return tmp ? tmp : arr;  // Return original if realloc fails but keep smaller size
 }
 
-int main(int argc, char const *argv[]) {
-    const char *prog = argc > 0 ? argv[0] : "memoire";
+int main(int argc, char const* argv[]) {
+    const char* prog = argc > 0 ? argv[0] : "memoire";
 
-    const char *filePath = "./data.txt";
+    const char* filePath = "./data.txt";
     int assumeYes = 0;
 
     int idx = 1;
@@ -318,20 +318,20 @@ int main(int argc, char const *argv[]) {
     // decide whether this is list mode or a subcommand
     if (idx >= argc) {
         // list mode: use loadEntries()
-        Entry *arr = NULL;
+        Entry* arr = NULL;
         size_t n = 0;
         if (loadEntries(filePath, &arr, &n, 0) != 0) {
             freeEntries(arr, n);
             return 1;
         }
         for (size_t i = 0; i < n; ++i) {
-            printf("%s: %s\n", arr[i].key ? arr[i].key : "", arr[i].value ? arr[i].value : "");
+            printf("%s:%s\n", arr[i].key ? arr[i].key : "", arr[i].value ? arr[i].value : "");
         }
         freeEntries(arr, n);
         return 0;
     }
 
-    const char *command = argv[idx];
+    const char* command = argv[idx];
 
     // Handle get command
     if (strcmp(command, "get") == 0) {
@@ -341,8 +341,8 @@ int main(int argc, char const *argv[]) {
             return 2;
         }
 
-        const char *key = argv[idx + 1];
-        Entry *arr = NULL;
+        const char* key = argv[idx + 1];
+        Entry* arr = NULL;
         size_t n = 0;
 
         if (loadEntries(filePath, &arr, &n, 0) != 0) {
@@ -352,7 +352,7 @@ int main(int argc, char const *argv[]) {
 
         ssize_t pos = findEntryFuzzy(arr, n, key);
         if (pos >= 0) {
-            printf("%s: %s\n", arr[pos].key, arr[pos].value ? arr[pos].value : "");
+            printf("%s:%s\n", arr[pos].key, arr[pos].value ? arr[pos].value : "");
             freeEntries(arr, n);
             return 0;
         } else {
@@ -370,11 +370,11 @@ int main(int argc, char const *argv[]) {
             return 2;
         }
 
-        const char *key = argv[idx + 1];
+        const char* key = argv[idx + 1];
 
         size_t valLen = 1;  // for '\0'
         for (int i = idx + 2; i < argc; ++i) valLen += strlen(argv[i]) + 1;
-        char *value = malloc(valLen);
+        char* value = malloc(valLen);
         if (!value) {
             fprintf(stderr, "Memory error\n");
             return 1;
@@ -385,7 +385,7 @@ int main(int argc, char const *argv[]) {
             if (i + 1 < argc) strcat(value, " ");
         }
 
-        Entry *arr = NULL;
+        Entry* arr = NULL;
         size_t n = 0;
         if (loadEntries(filePath, &arr, &n, 0) != 0) {
             free(value);
@@ -418,7 +418,7 @@ int main(int argc, char const *argv[]) {
             }
         } else {
             // create new
-            Entry *tmp = realloc(arr, (n + 1) * sizeof(Entry));
+            Entry* tmp = realloc(arr, (n + 1) * sizeof(Entry));
             if (!tmp) {
                 fprintf(stderr, "Memory error\n");
                 free(value);
@@ -458,11 +458,11 @@ int main(int argc, char const *argv[]) {
             return 2;
         }
 
-        const char *key = argv[idx + 1];
+        const char* key = argv[idx + 1];
 
         size_t valLen = 1;  // for '\0'
         for (int i = idx + 2; i < argc; ++i) valLen += strlen(argv[i]) + 1;
-        char *value = malloc(valLen);
+        char* value = malloc(valLen);
         if (!value) {
             fprintf(stderr, "Memory error\n");
             return 1;
@@ -473,7 +473,7 @@ int main(int argc, char const *argv[]) {
             if (i + 1 < argc) strcat(value, " ");
         }
 
-        Entry *arr = NULL;
+        Entry* arr = NULL;
         size_t n = 0;
         if (loadEntries(filePath, &arr, &n, 0) != 0) {
             free(value);
@@ -532,8 +532,8 @@ int main(int argc, char const *argv[]) {
             return 2;
         }
 
-        const char *key = argv[idx + 1];
-        Entry *arr = NULL;
+        const char* key = argv[idx + 1];
+        Entry* arr = NULL;
         size_t n = 0;
 
         if (loadEntries(filePath, &arr, &n, 0) != 0) {

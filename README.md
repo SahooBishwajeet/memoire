@@ -115,13 +115,13 @@ Memoire is designed to integrate well with application launchers:
 
 ```bash
 # Get all keys for selection
-./memoire | rofi -dmenu -p "Select:"
+./memoire | rofi -dmenu -p "Select:" | cut -d ":" -f 2-
 
 # Or with dmenu
-./memoire | dmenu -p "Select:"
+./memoire | dmenu -p "Select:" | cut -d ":" -f 2-
 
 # Or pipe it to wl-copy
-./memoire | rofi -dmenu -p "Select:" | wl-copy
+./memoire | rofi -dmenu -p "Select:" | cut -d ":" -f 2- | wl-copy
 ```
 
 ## License
