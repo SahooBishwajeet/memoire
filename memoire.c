@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +15,47 @@ typedef struct {
     char* key;
     char* value;
 } Entry;
+
+static char* getDataPath(void) {
+    const char* xdgConfig = getenv("XDG_CONFIG_HOME");
+    const char* home = getenv("HOME");
+
+    if (!xdgConfig && !home) {
+        return strdup("./data.txt");
+    }
+
+    char* configDir;
+    if (xdgConfig) {
+        size_t len = strlen(xdgConfig) + strlen("/memoire") + 1;
+        configDir = malloc(len);
+        if (!configDir) return NULL;
+        snprintf(configDir, len, "%s/memoire", xdgConfig);
+    } else {
+        size_t len = strlen(home) + strlen("/.config/memoire") + 1;
+        configDir = malloc(len);
+        if (!configDir) return NULL;
+        snprintf(configDir, len, "%s/.config/memoire", home);
+    }
+
+    // Create directory if it doesn't exist
+    struct stat st = {0};
+    if (stat(configDir, &st) == -1) {
+        if (mkdir(configDir, 0755) == -1) {
+            fprintf(stderr, "Warning: Could not create config directory: %s\n", strerror(errno));
+        }
+    }
+
+    size_t pathLen = strlen(configDir) + strlen("/data.txt") + 1;
+    char* dataPath = malloc(pathLen);
+    if (!dataPath) {
+        free(configDir);
+        return NULL;
+    }
+    snprintf(dataPath, pathLen, "%s/data.txt", configDir);
+
+    free(configDir);
+    return dataPath;
+}
 
 static char* trim(char* s) {
     if (!s) return NULL;
@@ -288,7 +330,9 @@ static Entry* removeEntry(Entry* arr, size_t* n, size_t index) {
 int main(int argc, char const* argv[]) {
     const char* prog = argc > 0 ? argv[0] : "memoire";
 
-    const char* filePath = "./data.txt";
+    char* defaultPath = getDataPath();
+    const char* filePath = defaultPath ? defaultPath : "./data.txt";
+
     int assumeYes = 0;
 
     int idx = 1;
@@ -297,6 +341,7 @@ int main(int argc, char const* argv[]) {
             if (idx + 1 >= argc) {
                 fprintf(stderr, "Missing argument (filename) for %s\n", argv[idx]);
                 usage(prog);
+                free(defaultPath);
                 return 2;
             }
 
@@ -307,10 +352,12 @@ int main(int argc, char const* argv[]) {
             idx++;
         } else if (strcmp(argv[idx], "-h") == 0 || strcmp(argv[idx], "--help") == 0) {
             usage(prog);
+            free(defaultPath);
             return 0;
         } else {
             fprintf(stderr, "Unknown options: %s\n", argv[idx]);
             usage(prog);
+            free(defaultPath);
             return 2;
         }
     }
@@ -328,6 +375,7 @@ int main(int argc, char const* argv[]) {
             printf("%s:%s\n", arr[i].key ? arr[i].key : "", arr[i].value ? arr[i].value : "");
         }
         freeEntries(arr, n);
+        free(defaultPath);
         return 0;
     }
 
