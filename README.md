@@ -8,18 +8,92 @@ A simple, single-file command-line key-value store utility written in C. Perfect
 - **Multiple operations**: List, get, set, update, and delete entries
 - **Fuzzy search**: Find entries with partial or out-of-order character matching
 - **Atomic file operations**: Safe concurrent access with temporary file writes
+- **XDG Base Directory compliant**: Stores data in `~/.config/memoire/data.txt`
 - **Confirmation prompts**: Optional confirmations for destructive operations
 - **Memory safe**: Proper memory management with no leaks
 - **Error handling**: Comprehensive error checking for file operations
+- **System integration**: Easy installation for system-wide access
+
+## Menu of Contents
+
+- [Installation](#installation)
+  - [From Source](#from-source)
+  - [Manual Installation](#manual-installation)
+- [Man page](#man-page)
+- [Uninstallation](#uninstallation)
+- [Usage](#usage)
+  - [Basic Commands](#basic-commands)
+  - [Options](#options)
+- [Data Format](#data-format)
+- [Fuzzy Search](#fuzzy-search)
+- [Examples](#examples)
+- [Integration with Launchers](#integration-with-launchers)
+  - [Basic Integration](#basic-integration)
+  - [Complex Integration](#complex-integration)
+- [License](#license)
 
 ## Installation
 
-```bash
-# Compile the program
-gcc -o memoire memoire.c
+### From Source
 
-# Or use the provided build script
-./build.sh
+```bash
+# Clone or download the source
+git clone git@github.com:SahooBishwajeet/memoire.git
+# OR
+git clone https://github.com/SahooBishwajeet/memoire.git
+
+cd memoire
+
+# Build
+make
+
+# Install system-wide (requires sudo)
+sudo make install
+
+# Or install to user directory
+make install PREFIX=~/.local
+```
+
+### Manual Installation
+
+```bash
+# Compile
+gcc -Wall -Wextra -std=c99 -O2 -o memoire memoire.c
+
+# Install to system (requires sudo)
+sudo cp memoire /usr/local/bin/
+
+# Or install to user directory
+mkdir -p ~/.local/bin
+cp memoire ~/.local/bin/
+# Make sure ~/.local/bin is in your PATH
+```
+
+## Man page
+
+The man page will get installed automatically if you use `make install`. You can view it using:
+
+```bash
+# View the man page
+man ./memoire.1
+
+# Or format it with groff
+groff -man -Tascii memoire.1 | less
+```
+
+## Uninstallation
+
+```bash
+# If installed via make
+sudo make uninstall
+
+# Manual removal
+sudo rm /usr/local/bin/memoire
+# or
+rm ~/.local/bin/memoire
+
+# Remove data (optional)
+rm -rf ~/.config/memoire
 ```
 
 ## Usage
@@ -115,13 +189,52 @@ Memoire is designed to integrate well with application launchers:
 
 ```bash
 # Get all keys for selection
-./memoire | rofi -dmenu -p "Select:" | cut -d ":" -f 2-
+./memoire | rofi -dmenu -p "Memoire:" | cut -d ":" -f 2-
 
 # Or with dmenu
-./memoire | dmenu -p "Select:" | cut -d ":" -f 2-
+./memoire | dmenu -p "Memoire:" | cut -d ":" -f 2-
 
 # Or pipe it to wl-copy
-./memoire | rofi -dmenu -p "Select:" | cut -d ":" -f 2- | wl-copy
+./memoire | rofi -dmenu -p "Memoire:" | cut -d ":" -f 2- | wl-copy
+```
+
+### Complex Integration
+
+```bash
+memoire | rofi -dmenu -p "Memoire:" | cut -d ":" -f 2- | wl-copy && notify-send "Memoire" "Copied to clipboard"
+```
+
+```bash
+memoire | dmenu -p "Memoire:" | cut -d ":" -f 2- | wl-copy && notify-send "Memoire" "Copied to clipboard"
+```
+
+```bash
+#!/bin/bash
+
+selected=$(memoire | rofi -dmenu -p "Memoire:" -format "s")
+if [ -n "$selected" ]; then
+    value=$(echo "$selected" | cut -d':' -f2-)
+    echo -n "$value" | wl-copy
+    # echo -n "$value" | xclip
+    notify-send "Memoire" "Copied to clipboard: $value"
+fi
+
+# Save this file as ~/.local/bin/memoire-rofi or anywhere preferrable
+```
+
+```bash
+#!/bin/bash
+
+selected=$(memoire | dmenu -p "Memoire:")
+if [ -n "$selected" ]; then
+    value=$(echo "$selected" | cut -d':' -f2-)
+    echo -n "$value" | wl-copy
+    # echo -n "$value" | xclip
+    notify-send "Memoire" "Copied to clipboard"
+fi
+
+# Save this file as ~/.local/bin/memoire-dmenu or anywhere preferrable
+
 ```
 
 ## License

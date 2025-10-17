@@ -1,0 +1,128 @@
+.TH memoire 1 "October 2025" "Version 1.0" "User Commands"
+.SH NAME
+memoire \- simple command-line key-value store utility
+.SH SYNOPSIS
+.B memoire
+[\fIOPTIONS\fR]
+.br
+.B memoire
+[\fIOPTIONS\fR] \fBget\fR \fIKEY\fR
+.br
+.B memoire
+[\fIOPTIONS\fR] \fBset\fR \fIKEY\fR \fIVALUE\fR
+.br
+.B memoire
+[\fIOPTIONS\fR] \fBupdate\fR \fIKEY\fR \fIVALUE\fR
+.br
+.B memoire
+[\fIOPTIONS\fR] \fBdelete\fR \fIKEY\fR
+.SH DESCRIPTION
+.B memoire
+is a simple, single-file command-line key-value store utility written in C. It stores data in a simple text format and is perfect for quick access to frequently used text snippets, passwords, commands, or any other key-value pairs through application launchers like rofi or dmenu.
+
+When run without arguments, memoire lists all stored key-value pairs.
+.SH COMMANDS
+.TP
+.B get \fIKEY\fR
+Retrieve the value for the specified key. Supports fuzzy searching, allowing partial matches where characters appear in order but not necessarily consecutive.
+.TP
+.B set \fIKEY\fR \fIVALUE\fR
+Create a new key-value pair or overwrite an existing one. Multiple words in VALUE are automatically joined with spaces.
+.TP
+.B update \fIKEY\fR \fIVALUE\fR
+Update an existing key with a new value. Will not create new entries - only updates existing ones.
+.TP
+.B delete \fIKEY\fR
+Remove the specified key and its value from storage.
+.SH OPTIONS
+.TP
+.BR \-f ", " \-\-file " " \fIPATH\fR
+Use the specified file instead of the default data file.
+.TP
+.BR \-y ", " \-\-yes
+Assume yes for all confirmation prompts. Useful for scripting.
+.TP
+.BR \-h ", " \-\-help
+Display help information and exit.
+.SH FILES
+.TP
+.I ~/.config/memoire/data.txt
+Default data storage file. Created automatically following XDG Base Directory specification.
+.SH DATA FORMAT
+The data file uses a simple format with one entry per line:
+.PP
+.nf
+.RS
+key:value
+email:user@example.com
+password:my_secret_123
+command:git log --oneline --graph
+.RE
+.fi
+.SH FUZZY SEARCH
+The \fBget\fR command supports fuzzy searching. For a key like "random":
+.IP \[bu] 2
+\(dqran\(dq will match
+.IP \[bu] 2
+\(dqdom\(dq will match
+.IP \[bu] 2
+\(dqrnd\(dq will match
+.IP \[bu] 2
+\(dqrdm\(dq will match
+.PP
+Characters must appear in order but don't need to be consecutive.
+.SH EXAMPLES
+.TP
+List all entries:
+.B memoire
+.TP
+Get a specific key:
+.B memoire get email
+.TP
+Fuzzy search:
+.B memoire get mail
+(finds \(dqemail\(dq)
+.TP
+Set a new key-value pair:
+.B memoire set greeting \(dqHello, World!\(dq
+.TP
+Update existing key:
+.B memoire update email \(dqnewemail@example.com\(dq
+.TP
+Delete a key:
+.B memoire delete password
+.TP
+Use custom file:
+.B memoire -f /tmp/mydata.txt get mykey
+.TP
+Skip confirmations:
+.B memoire -y delete oldkey
+.SH INTEGRATION
+memoire integrates well with application launchers:
+.TP
+Rofi integration:
+.B memoire | rofi -dmenu -p \(dqMemoire:\(dq | cut -d \(dq:\(dq -f 2- | wl-copy
+.TP
+Dmenu integration:
+.B memoire | dmenu -p \(dqMemoire:\(dq | cut -d \(dq:\(dq -f 2- | wl-copy
+.SH EXIT STATUS
+.TP
+.B 0
+Successful operation
+.TP
+.B 1
+Key not found or operation failed
+.TP
+.B 2
+Invalid arguments or usage error
+.SH AUTHOR
+Written by Bishwajeet Sahoo.
+.SH BUGS
+Report bugs to https://github.com/SahooBishwajeet/memoire/issues.
+.SH SEE ALSO
+.BR rofi (1),
+.BR dmenu (1),
+.BR xclip (1)
+.SH COPYRIGHT
+Copyright © 2025 Bishwajeet Sahoo.
+License: MIT License. See the project repository for details.
