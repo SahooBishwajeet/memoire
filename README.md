@@ -2,6 +2,8 @@
 
 A simple, single-file command-line key-value store utility written in C. Perfect for quick access to frequently used text snippets, passwords, commands, or any other key-value pairs through application launchers like rofi or dmenu.
 
+> You can also use [memoire.sh](memoire.sh) shell script as an alternative to this C implementation. Edit the script to change the data file location, launcher command, and clipboard command as per your preference.
+
 ## Features
 
 - **Simple text-based storage**: Store key-value pairs in a human-readable format
