@@ -105,7 +105,14 @@ static void freeEntries(Entry* arr, size_t n) {
 }
 
 static int loadEntries(const char* path, Entry** out, size_t* numReads, int verbose) {
-    FILE* fp = fopen(path, "r");
+    FILE* fp = NULL;
+    Entry* arr = NULL;
+    char* line = NULL;
+    size_t capacity = 0;
+    size_t arrCap = 0, entriesLoaded = 0;
+    int ret = -1;
+
+    fp = fopen(path, "r");
     if (!fp) {
         if (errno == ENOENT) {
             *out = NULL;
@@ -116,13 +123,7 @@ static int loadEntries(const char* path, Entry** out, size_t* numReads, int verb
         return -1;
     }
 
-    Entry* arr = NULL;
-    size_t arrCap = 0, entriesLoaded = 0;
-
-    char* line = NULL;
-    size_t capacity = 0;
     ssize_t nread;
-
     while ((nread = getline(&line, &capacity, fp)) != -1) {
         if (nread <= 0) continue;
 
@@ -157,10 +158,7 @@ static int loadEntries(const char* path, Entry** out, size_t* numReads, int verb
             Entry* tmp = realloc(arr, nc * sizeof(Entry));
             if (!tmp) {
                 fprintf(stderr, "Memory allocation failed\n");
-                free(line);
-                freeEntries(arr, entriesLoaded);
-                fclose(fp);
-                return -1;
+                goto cleanup;
             }
             arr = tmp;
             arrCap = nc;
@@ -170,87 +168,92 @@ static int loadEntries(const char* path, Entry** out, size_t* numReads, int verb
         arr[entriesLoaded].value = value ? strdup(value) : strdup("");
         if (!arr[entriesLoaded].key || !arr[entriesLoaded].value) {
             fprintf(stderr, "Memory allocation failed\n");
-            free(line);
-            freeEntries(arr, entriesLoaded + 1);
-            fclose(fp);
-            return -1;
+            goto cleanup;
         }
         entriesLoaded++;
     }
 
-    free(line);
-    fclose(fp);
-
     *out = arr;
     *numReads = entriesLoaded;
-    return 0;
+    arr = NULL;  // Don't free on cleanup
+    ret = 0;
+
+cleanup:
+    free(line);
+    if (fp) fclose(fp);
+    if (arr) freeEntries(arr, entriesLoaded);
+    return ret;
 }
 
 static int saveEntriesAtomic(const char* path, Entry* arr, size_t n) {
+    char* tmp = NULL;
+    FILE* fp = NULL;
+    int fd = -1;
+    int ret = -1;
+
     size_t tlen = strlen(path) + 12;
-    char* tmp = malloc(tlen + 1);
+    tmp = malloc(tlen + 1);
     if (!tmp) {
         fprintf(stderr, "Memory error\n");
-        return -1;
+        goto cleanup;
     }
     snprintf(tmp, tlen + 1, "%s.tmpXXXXXX", path);
 
-    int fd = mkstemp(tmp);
+    fd = mkstemp(tmp);
     if (fd == -1) {
         fprintf(stderr, "mkstemp failed for '%s': %s\n", tmp, strerror(errno));
-        free(tmp);
-        return -1;
+        goto cleanup;
     }
 
-    FILE* fp = fdopen(fd, "w");
+    fp = fdopen(fd, "w");
     if (!fp) {
         fprintf(stderr, "fdopen failed: %s\n", strerror(errno));
-        close(fd);
-        unlink(tmp);
-        free(tmp);
-        return -1;
+        goto cleanup_with_unlink;
     }
+    fd = -1;  // fp now owns the file descriptor
 
     for (size_t i = 0; i < n; ++i) {
         if (fprintf(fp, "%s:%s\n", arr[i].key ? arr[i].key : "", arr[i].value ? arr[i].value : "") <
             0) {
             fprintf(stderr, "Write error: %s\n", strerror(errno));
-            fclose(fp);
-            unlink(tmp);
-            free(tmp);
-            return -1;
+            goto cleanup_with_unlink;
         }
     }
 
     if (fflush(fp) != 0) {
         fprintf(stderr, "fflush failed: %s\n", strerror(errno));
-        fclose(fp);
-        unlink(tmp);
-        free(tmp);
-        return -1;
+        goto cleanup_with_unlink;
     }
+
     int outfd = fileno(fp);
     if (outfd >= 0) {
         if (fsync(outfd) != 0) {
             fprintf(stderr, "Warning: fsync failed: %s\n", strerror(errno));
         }
     }
+
     if (fclose(fp) != 0) {
         fprintf(stderr, "fclose failed: %s\n", strerror(errno));
-        unlink(tmp);
-        free(tmp);
-        return -1;
+        fp = NULL;  // Don't try to close again
+        goto cleanup_with_unlink;
     }
+    fp = NULL;  // Successfully closed
 
     if (rename(tmp, path) != 0) {
         fprintf(stderr, "rename %s -> %s failed: %s\n", tmp, path, strerror(errno));
-        unlink(tmp);
-        free(tmp);
-        return -1;
+        goto cleanup_with_unlink;
     }
 
+    ret = 0;  // Success
+    goto cleanup;
+
+cleanup_with_unlink:
+    if (tmp) unlink(tmp);
+cleanup:
+    if (fp) fclose(fp);
+    if (fd >= 0) close(fd);
     free(tmp);
-    return 0;
+    return ret;
 }
 
 static int fuzzyMatch(const char* key, const char* pattern) {
@@ -329,8 +332,13 @@ static Entry* removeEntry(Entry* arr, size_t* n, size_t index) {
 
 int main(int argc, char const* argv[]) {
     const char* prog = argc > 0 ? argv[0] : "memoire";
+    char* defaultPath = NULL;
+    Entry* arr = NULL;
+    char* value = NULL;
+    size_t n = 0;
+    int ret = 0;
 
-    char* defaultPath = getDataPath();
+    defaultPath = getDataPath();
     const char* filePath = defaultPath ? defaultPath : "./data.txt";
 
     int assumeYes = 0;
@@ -341,8 +349,8 @@ int main(int argc, char const* argv[]) {
             if (idx + 1 >= argc) {
                 fprintf(stderr, "Missing argument (filename) for %s\n", argv[idx]);
                 usage(prog);
-                free(defaultPath);
-                return 2;
+                ret = 2;
+                goto cleanup;
             }
 
             filePath = argv[idx + 1];
@@ -352,31 +360,28 @@ int main(int argc, char const* argv[]) {
             idx++;
         } else if (strcmp(argv[idx], "-h") == 0 || strcmp(argv[idx], "--help") == 0) {
             usage(prog);
-            free(defaultPath);
-            return 0;
+            ret = 0;
+            goto cleanup;
         } else {
             fprintf(stderr, "Unknown options: %s\n", argv[idx]);
             usage(prog);
-            free(defaultPath);
-            return 2;
+            ret = 2;
+            goto cleanup;
         }
     }
 
     // decide whether this is list mode or a subcommand
     if (idx >= argc) {
         // list mode: use loadEntries()
-        Entry* arr = NULL;
-        size_t n = 0;
         if (loadEntries(filePath, &arr, &n, 0) != 0) {
-            freeEntries(arr, n);
-            return 1;
+            ret = 1;
+            goto cleanup;
         }
         for (size_t i = 0; i < n; ++i) {
             printf("%s:%s\n", arr[i].key ? arr[i].key : "", arr[i].value ? arr[i].value : "");
         }
-        freeEntries(arr, n);
-        free(defaultPath);
-        return 0;
+        ret = 0;
+        goto cleanup;
     }
 
     const char* command = argv[idx];
@@ -386,27 +391,26 @@ int main(int argc, char const* argv[]) {
         if (idx + 1 >= argc) {
             fprintf(stderr, "Missing key for get command\n");
             usage(prog);
-            return 2;
+            ret = 2;
+            goto cleanup;
         }
 
         const char* key = argv[idx + 1];
-        Entry* arr = NULL;
-        size_t n = 0;
 
         if (loadEntries(filePath, &arr, &n, 0) != 0) {
-            freeEntries(arr, n);
-            return 1;
+            ret = 1;
+            goto cleanup;
         }
 
         ssize_t pos = findEntryFuzzy(arr, n, key);
         if (pos >= 0) {
             printf("%s:%s\n", arr[pos].key, arr[pos].value ? arr[pos].value : "");
-            freeEntries(arr, n);
-            return 0;
+            ret = 0;
+            goto cleanup;
         } else {
             fprintf(stderr, "Key '%s' not found\n", key);
-            freeEntries(arr, n);
-            return 1;
+            ret = 1;
+            goto cleanup;
         }
     }
 
@@ -415,17 +419,19 @@ int main(int argc, char const* argv[]) {
         if (idx + 2 >= argc) {
             fprintf(stderr, "Missing key and/or value for set command\n");
             usage(prog);
-            return 2;
+            ret = 2;
+            goto cleanup;
         }
 
         const char* key = argv[idx + 1];
 
         size_t valLen = 1;  // for '\0'
         for (int i = idx + 2; i < argc; ++i) valLen += strlen(argv[i]) + 1;
-        char* value = malloc(valLen);
+        value = malloc(valLen);
         if (!value) {
             fprintf(stderr, "Memory error\n");
-            return 1;
+            ret = 1;
+            goto cleanup;
         }
         value[0] = '\0';
         for (int i = idx + 2; i < argc; ++i) {
@@ -433,12 +439,9 @@ int main(int argc, char const* argv[]) {
             if (i + 1 < argc) strcat(value, " ");
         }
 
-        Entry* arr = NULL;
-        size_t n = 0;
         if (loadEntries(filePath, &arr, &n, 0) != 0) {
-            free(value);
-            freeEntries(arr, n);
-            return 1;
+            ret = 1;
+            goto cleanup;
         }
 
         ssize_t pos = findEntry(arr, n, key);
@@ -451,51 +454,45 @@ int main(int argc, char const* argv[]) {
                          arr[pos].value ? arr[pos].value : "", value ? value : "");
                 if (!confirmPrompt(prompt)) {
                     fprintf(stderr, "Aborted.\n");
-                    free(value);
-                    freeEntries(arr, n);
-                    return 1;
+                    ret = 1;
+                    goto cleanup;
                 }
             }
             free(arr[pos].value);
             arr[pos].value = strdup(value ? value : "");
             if (!arr[pos].value) {
                 fprintf(stderr, "Memory error\n");
-                free(value);
-                freeEntries(arr, n);
-                return 1;
+                ret = 1;
+                goto cleanup;
             }
         } else {
             // create new
             Entry* tmp = realloc(arr, (n + 1) * sizeof(Entry));
             if (!tmp) {
                 fprintf(stderr, "Memory error\n");
-                free(value);
-                freeEntries(arr, n);
-                return 1;
+                ret = 1;
+                goto cleanup;
             }
             arr = tmp;
             arr[n].key = strdup(key);
             arr[n].value = strdup(value ? value : "");
             if (!arr[n].key || !arr[n].value) {
                 fprintf(stderr, "Memory error\n");
-                free(value);
-                freeEntries(arr, n + 1);
-                return 1;
+                ret = 1;
+                goto cleanup;
             }
             n++;
         }
 
         if (saveEntriesAtomic(filePath, arr, n) != 0) {
             fprintf(stderr, "Failed to save changes\n");
-            free(value);
-            freeEntries(arr, n);
-            return 1;
+            ret = 1;
+            goto cleanup;
         }
 
-        free(value);
-        freeEntries(arr, n);
         printf("OK\n");
-        return 0;
+        ret = 0;
+        goto cleanup;
     }
 
     // Handle update command
@@ -503,17 +500,19 @@ int main(int argc, char const* argv[]) {
         if (idx + 2 >= argc) {
             fprintf(stderr, "Missing key and/or value for update command\n");
             usage(prog);
-            return 2;
+            ret = 2;
+            goto cleanup;
         }
 
         const char* key = argv[idx + 1];
 
         size_t valLen = 1;  // for '\0'
         for (int i = idx + 2; i < argc; ++i) valLen += strlen(argv[i]) + 1;
-        char* value = malloc(valLen);
+        value = malloc(valLen);
         if (!value) {
             fprintf(stderr, "Memory error\n");
-            return 1;
+            ret = 1;
+            goto cleanup;
         }
         value[0] = '\0';
         for (int i = idx + 2; i < argc; ++i) {
@@ -521,12 +520,9 @@ int main(int argc, char const* argv[]) {
             if (i + 1 < argc) strcat(value, " ");
         }
 
-        Entry* arr = NULL;
-        size_t n = 0;
         if (loadEntries(filePath, &arr, &n, 0) != 0) {
-            free(value);
-            freeEntries(arr, n);
-            return 1;
+            ret = 1;
+            goto cleanup;
         }
 
         ssize_t pos = findEntry(arr, n, key);
@@ -539,36 +535,31 @@ int main(int argc, char const* argv[]) {
                          arr[pos].value ? arr[pos].value : "", value ? value : "");
                 if (!confirmPrompt(prompt)) {
                     fprintf(stderr, "Aborted.\n");
-                    free(value);
-                    freeEntries(arr, n);
-                    return 1;
+                    ret = 1;
+                    goto cleanup;
                 }
             }
             free(arr[pos].value);
             arr[pos].value = strdup(value ? value : "");
             if (!arr[pos].value) {
                 fprintf(stderr, "Memory error\n");
-                free(value);
-                freeEntries(arr, n);
-                return 1;
+                ret = 1;
+                goto cleanup;
             }
 
             if (saveEntriesAtomic(filePath, arr, n) != 0) {
                 fprintf(stderr, "Failed to save changes\n");
-                free(value);
-                freeEntries(arr, n);
-                return 1;
+                ret = 1;
+                goto cleanup;
             }
 
-            free(value);
-            freeEntries(arr, n);
             printf("OK\n");
-            return 0;
+            ret = 0;
+            goto cleanup;
         } else {
             fprintf(stderr, "Key '%s' not found. Use 'set' to create new entries.\n", key);
-            free(value);
-            freeEntries(arr, n);
-            return 1;
+            ret = 1;
+            goto cleanup;
         }
     }
 
@@ -577,16 +568,15 @@ int main(int argc, char const* argv[]) {
         if (idx + 1 >= argc) {
             fprintf(stderr, "Missing key for delete command\n");
             usage(prog);
-            return 2;
+            ret = 2;
+            goto cleanup;
         }
 
         const char* key = argv[idx + 1];
-        Entry* arr = NULL;
-        size_t n = 0;
 
         if (loadEntries(filePath, &arr, &n, 0) != 0) {
-            freeEntries(arr, n);
-            return 1;
+            ret = 1;
+            goto cleanup;
         }
 
         ssize_t pos = findEntry(arr, n, key);
@@ -597,8 +587,8 @@ int main(int argc, char const* argv[]) {
                          key, arr[pos].value ? arr[pos].value : "");
                 if (!confirmPrompt(prompt)) {
                     fprintf(stderr, "Aborted.\n");
-                    freeEntries(arr, n);
-                    return 1;
+                    ret = 1;
+                    goto cleanup;
                 }
             }
 
@@ -606,22 +596,29 @@ int main(int argc, char const* argv[]) {
 
             if (saveEntriesAtomic(filePath, arr, n) != 0) {
                 fprintf(stderr, "Failed to save changes\n");
-                freeEntries(arr, n);
-                return 1;
+                ret = 1;
+                goto cleanup;
             }
 
-            freeEntries(arr, n);
             printf("OK\n");
-            return 0;
+            ret = 0;
+            goto cleanup;
         } else {
             fprintf(stderr, "Key '%s' not found\n", key);
-            freeEntries(arr, n);
-            return 1;
+            ret = 1;
+            goto cleanup;
         }
     }
 
     // Unknown command
     fprintf(stderr, "Unknown command: %s\n", command);
     usage(prog);
-    return 2;
+    ret = 2;
+    goto cleanup;
+
+cleanup:
+    free(value);
+    freeEntries(arr, n);
+    free(defaultPath);
+    return ret;
 }
